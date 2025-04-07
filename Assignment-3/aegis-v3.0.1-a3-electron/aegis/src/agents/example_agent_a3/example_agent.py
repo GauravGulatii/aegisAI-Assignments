@@ -31,6 +31,7 @@ from aegis import (
     SAVE_SURV_RESULT,
     SEND_MESSAGE,
     TEAM_DIG,
+    SLEEP,
     AgentCommand,
     AgentIDList,
     Direction,
@@ -158,10 +159,23 @@ class ExampleAgent(Brain):
         known_surv_loc = self.find_known_survivor(world, my_loc)
         if known_surv_loc is not None:
             path = self.a_star_path(world, my_loc, known_surv_loc)
+            # Need a separate path for charging cell pathfinding
+            charging_path = self.a_star_path(world, my_loc, self.find_known_charging_cell(world, my_loc))
             # If the path is trivial => we can't reach that survivor.
             if len(path) > 1:
-                direction = my_loc.direction_to(path[1])
-                self.send_and_end_turn(MOVE(direction))
+                # energy cost of moving to survivor
+                energy_cost = self.calculate_energy_cost(path)
+                # If agent does not have enough energy to save survivor look for charging cell
+                if energy_cost > self._agent.get_energy_level():
+                    if cell_here.is_charging_cell():  
+                        self.send_and_end_turn(SLEEP())
+                    else:
+                        direction = my_loc.direction_to(charging_path[1])
+                        self.send_and_end_turn(MOVE(direction))
+                # else trivial case
+                else:
+                    direction = my_loc.direction_to(path[1])
+                    self.send_and_end_turn(MOVE(direction))
                 return
             else:
                 # No real path, mark that location unreachable for THIS agent
@@ -216,6 +230,10 @@ class ExampleAgent(Brain):
 
         # no unvisited cell found
         return None
+    
+    # energy cost length of path
+    def calculate_energy_cost(self, path: list[Location]) -> int:
+        return len(path)
 
     # return any location in world grid that has_survivors == True
     # It picks the CLOSEST one, but also SKIPS any in _unreachable_survivors
@@ -232,6 +250,16 @@ class ExampleAgent(Brain):
                     if dist < best_dist:
                         best_dist = dist
                         closest_loc = c.location
+        return closest_loc
+    
+
+    def find_known_charging_cell(self, world: World, start: Location):
+        closest_loc = None
+        best_dist = float('inf')
+        for row in world.get_world_grid():
+            for c in row:
+                if c.is_charging_cell():
+                    closest_loc = c.location
         return closest_loc
 
     # for the center cell plus neighbors, store their move_cost in self._move_costs.
