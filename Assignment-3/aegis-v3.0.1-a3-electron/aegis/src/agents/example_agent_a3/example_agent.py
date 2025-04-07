@@ -4,7 +4,7 @@ example_agent.py
 Submitted by: 
 Group 24
 Gaurav Gulati - 30121866
-Miguel Fuentes - 
+Miguel Fuentes - 30160653
 Sukhnaaz Sidhu - 
 Zahra Ali - 
 
@@ -42,11 +42,9 @@ from aegis import (
 from a3.agent import BaseAgent, Brain, AgentController
 
 
-# Chebyshev distance = max(|a.x - b.x|, |a.y - b.y|)
-def chebyshev_distance(a: Location, b: Location) -> float:
-    diff_x = abs(a.x - b.x)
-    diff_y = abs(a.y - b.y)
-    return max(diff_x, diff_y)
+# Using Manhattan distance = abs(a.x - b.x) + abs(a.y - b.y)
+def manhattan_distance(a: Location, b: Location) -> float:
+    return abs(a.x - b.x) + abs(a.y - b.y)
 
 # Small wrapper around Python heapq for storing (priority, item)
 class SimplePriorityQueue:
@@ -228,7 +226,7 @@ class ExampleAgent(Brain):
                     # skip if we previously decided it's unreachable
                     if c.location in self._unreachable_survivors:
                         continue
-                    dist = chebyshev_distance(start, c.location)
+                    dist = manhattan_distance(start, c.location)
                     if dist < best_dist:
                         best_dist = dist
                         closest_loc = c.location
@@ -273,7 +271,7 @@ class ExampleAgent(Brain):
                 new_cost = cost_so_far[current] + mc
                 if nxt not in cost_so_far or new_cost < cost_so_far[nxt]:
                     cost_so_far[nxt] = new_cost
-                    priority = new_cost + chebyshev_distance(nxt, goal)
+                    priority = new_cost + manhattan_distance(nxt, goal)
                     frontier.put(nxt, priority)
                     came_from[nxt] = current
 
