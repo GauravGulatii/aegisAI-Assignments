@@ -160,7 +160,9 @@ class ExampleAgent(Brain):
         if known_surv_loc is not None:
             path = self.a_star_path(world, my_loc, known_surv_loc)
             # Need a separate path for charging cell pathfinding
-            charging_path = self.a_star_path(world, my_loc, self.find_known_charging_cell(world, my_loc))
+            known_charge_loc = self.find_known_charging_cell(world, my_loc)
+            if known_charge_loc is not None:
+                charging_path = self.a_star_path(world, my_loc, known_charge_loc)
             # If the path is trivial => we can't reach that survivor.
             if len(path) > 1:
                 # energy cost of moving to survivor
