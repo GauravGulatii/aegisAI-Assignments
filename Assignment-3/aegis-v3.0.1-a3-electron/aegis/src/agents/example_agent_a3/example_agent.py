@@ -42,7 +42,7 @@ from aegis import (
 from a3.agent import BaseAgent, Brain, AgentController
 
 
-#Chebyshev distance = max(|a.x - b.x|, |a.y - b.y|)
+# Chebyshev distance = max(|a.x - b.x|, |a.y - b.y|)
 def chebyshev_distance(a: Location, b: Location) -> float:
     diff_x = abs(a.x - b.x)
     diff_y = abs(a.y - b.y)
@@ -75,6 +75,10 @@ class ExampleAgent(Brain):
         # Also track known move costs, from the local observations
         self._move_costs = {}
 
+        # Additional fields to handle unreachable survivors & finishing logic
+        self._unreachable_survivors: set[Location] = set()
+        self._all_survivors_finished: bool = False
+
     @override
     def handle_send_message_result(self, smr: SEND_MESSAGE_RESULT) -> None:
         self._agent.log(f"SEND_MESSAGE_RESULT: {smr}")
@@ -94,6 +98,12 @@ class ExampleAgent(Brain):
         self._agent.log(f"{ssr}")
         #print("#--- You need to implement handle_save_surv_result function! ---#")
 
+        # After saving a survivor, check if there are more survivors in the world.
+        # If not, we mark _all_survivors_finished = True
+        if self.count_all_survivors_in_world() == 0:
+            self._all_survivors_finished = True
+            self._agent.log("All survivors appear to be saved. Will do finishing logic now.")
+
     @override
     def handle_predict_result(self, prd: PREDICT_RESULT) -> None:
         self._agent.log(f"PREDICT_RESULT: {prd}")
@@ -102,6 +112,11 @@ class ExampleAgent(Brain):
     @override
     def think(self) -> None:
         self._agent.log("Thinking...")
+
+        # If we've determined all survivors are finished, do finishing logic (e.g. idle).
+        if self._all_survivors_finished:
+            self.send_and_end_turn(MOVE(Direction.CENTER))
+            return
 
         # Send a message to other agents in my group.
         # Empty AgentIDList will send to group members.
@@ -126,7 +141,7 @@ class ExampleAgent(Brain):
         # Update local knowledge about move costs around
         self.update_local_costs(world, my_loc)
 
-         # Get the top layer at the agent’s current location.
+        # Get the top layer at the agent’s current location.
         top_layer = cell_here.get_top_layer()
 
         # If a survivor is present, save it and end the turn.
@@ -139,21 +154,24 @@ class ExampleAgent(Brain):
             self.send_and_end_turn(TEAM_DIG())
             return
 
-        # otherwise see if we know about a location that has a survivor
-        known_surv_loc = self.find_known_survivor(world)
+        # Otherwise, see if we know about a location that has a survivor
+        known_surv_loc = self.find_known_survivor(world, my_loc)
         if known_surv_loc is not None:
             path = self.a_star_path(world, my_loc, known_surv_loc)
+            # If the path is trivial => we can't reach that survivor.
             if len(path) > 1:
-                # path[0] is current, path[1] is next step
                 direction = my_loc.direction_to(path[1])
                 self.send_and_end_turn(MOVE(direction))
                 return
             else:
-                # no real path
+                # No real path, mark that location unreachable for THIS agent
+                self._agent.log(f"Marking survivor at {known_surv_loc} unreachable for me.")
+                self._unreachable_survivors.add(known_surv_loc)
+                # We do a fallback move. Next round, we try a different survivor or explore.
                 self.send_and_end_turn(MOVE(Direction.CENTER))
                 return
 
-        # if no known survivors, we can try exploring new unvisited places
+        # If no known survivors, we can try exploring new unvisited places
         target_spot = self.pick_unvisited_cell(world, my_loc)
         if target_spot is not None:
             path = self.a_star_path(world, my_loc, target_spot)
@@ -199,15 +217,24 @@ class ExampleAgent(Brain):
         # no unvisited cell found
         return None
 
-# return any location in world grid that has_survivors == True
-    def find_known_survivor(self, world: World):
+    # return any location in world grid that has_survivors == True
+    # It picks the CLOSEST one, but also SKIPS any in _unreachable_survivors
+    def find_known_survivor(self, world: World, start: Location):
+        closest_loc = None
+        best_dist = float('inf')
         for row in world.get_world_grid():
             for c in row:
                 if c.has_survivors:
-                    return c.location
-        return None
+                    # skip if we previously decided it's unreachable
+                    if c.location in self._unreachable_survivors:
+                        continue
+                    dist = chebyshev_distance(start, c.location)
+                    if dist < best_dist:
+                        best_dist = dist
+                        closest_loc = c.location
+        return closest_loc
 
-# for the center cell plus neighbors, store their move_cost in self._move_costs.
+    # for the center cell plus neighbors, store their move_cost in self._move_costs.
     def update_local_costs(self, world: World, center: Location):
         directions = list(Direction)
         for d in directions:
@@ -219,7 +246,7 @@ class ExampleAgent(Brain):
         # also mark center visited
         self._visited.add(center)
 
-# A star algorithm referenced from A1 Submission and https://www.redblobgames.com/pathfinding/a-star/introduction.html
+    # A star algorithm referenced from A1 Submission and https://www.redblobgames.com/pathfinding/a-star/introduction.html
     def a_star_path(self, world: World, start: Location, goal: Location) -> list[Location]:
         frontier = SimplePriorityQueue()
         frontier.put(start, 0)
@@ -269,3 +296,15 @@ class ExampleAgent(Brain):
         self._agent.log(f"SENDING {command}")
         self._agent.send(command)
         self._agent.send(END_TURN())
+
+    # Used to count how many total survivors remain in the world
+    def count_all_survivors_in_world(self) -> int:
+        world = self.get_world()
+        if not world:
+            return 0
+        count_surv = 0
+        for row in world.get_world_grid():
+            for c in row:
+                if c.has_survivors:
+                    count_surv += 1
+        return count_surv
