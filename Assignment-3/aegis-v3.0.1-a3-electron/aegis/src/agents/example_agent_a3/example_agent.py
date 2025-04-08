@@ -80,7 +80,7 @@ class ExampleAgent(Brain):
         self._unreachable_survivors: set[Location] = set()
         self._all_survivors_finished: bool = False
 
-        # track which survivor the agent is targeting 
+        # Track which survivor the agent is targeting 
         self._my_target: Location | None = None
 
 
@@ -103,7 +103,7 @@ class ExampleAgent(Brain):
         if self.count_all_survivors_in_world() == 0:
             self._all_survivors_finished = True
         if self._my_target == ssr.location:
-            self._my_target = None  # clear target when saved
+            self._my_target = None  # Clear target when saved
 
         # After saving a survivor, check if there are more survivors in the world.
         # If not, we mark _all_survivors_finished = True
@@ -124,7 +124,7 @@ class ExampleAgent(Brain):
         if self._all_survivors_finished:
             self.send_and_end_turn(MOVE(Direction.CENTER))
             return
-
+        
         # Send a message to other agents in my group.
         # Empty AgentIDList will send to group members.
         self._agent.send(
@@ -160,6 +160,46 @@ class ExampleAgent(Brain):
         if isinstance(top_layer, Rubble):
             self.send_and_end_turn(TEAM_DIG())
             return
+
+        # If no target or it became unreachable, reassign a target.
+        if not self._my_target or self._my_target in self._unreachable_survivors:
+            self._my_target = self.assign_target(world, my_loc)
+            
+        # Attempt to move forward toward the assigned target.
+        if self._my_target:
+            path = self.a_star_path(world, my_loc, self._my_target)
+            if len(path) > 1:
+                energy_cost = self.calculate_energy_cost(path)
+
+                # If energy is too low, navigate to the charging cell first.
+                if energy_cost > self._agent.get_energy_level():
+                    charge_loc = self.find_known_charging_cell(world, my_loc)
+                    if charge_loc:
+                        charge_path = self.a_star_path(world, my_loc, charge_loc)
+                        if cell_here.is_charging_cell():
+                            self.send_and_end_turn(SLEEP())
+                        else:
+                            self.send_and_end_turn(MOVE(my_loc.direction_to(charge_path[1])))
+                        return
+
+                # Move toward the survivor if energy is sufficient.
+                self.send_and_end_turn(MOVE(my_loc.direction_to(path[1])))
+                return
+            else:
+                # Mark target unreachable, clear target.
+                self._unreachable_survivors.add(self._my_target)
+                self._my_target = None
+
+        # If no target, explore unvisited areas. 
+        target_spot = self.pick_unvisited_cell(world, my_loc)
+        if target_spot:
+            path = self.a_star_path(world, my_loc, target_spot)
+            if len(path) > 1:
+                self.send_and_end_turn(MOVE(my_loc.direction_to(path[1])))
+                return
+        
+        # Fallback move
+        self.send_and_end_turn(MOVE(Direction.CENTER))
 
         # Otherwise, see if we know about a location that has a survivor
         known_surv_loc = self.find_known_survivor(world, my_loc)
@@ -238,7 +278,7 @@ class ExampleAgent(Brain):
 
         # no unvisited cell found
         return None
-    
+
     # energy cost length of path
     def calculate_energy_cost(self, path: list[Location]) -> int:
         return len(path)
@@ -344,3 +384,17 @@ class ExampleAgent(Brain):
                 if c.has_survivors:
                     count_surv += 1
         return count_surv
+
+    # Used to assign the nearest survivor location as the agent's target
+    def assign_target(self, world: World, start: Location) -> Location | None:
+        # Collect all reachable survivors' locations
+        survivors = [
+            c.location
+            for row in world.get_world_grid()
+            for c in row
+            if c.has_survivors and c.location not in self._unreachable_survivors
+        ]
+        # Sorting by distance
+        survivors.sort(key=lambda loc: chebyshev_distance(start, loc))
+        # Choose the closest one
+        return survivors[0] if survivors else None
