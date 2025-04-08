@@ -101,8 +101,7 @@ class ExampleAgent(Brain):
         self._agent.log(f"SAVE_SURV_RESULT: {ssr}")
         
         # If we just saved our current target, clear it.
-        if self._my_target == ssr.location:
-            self._agent.log(f"Saved target survivor at {ssr.location}, clearing target.")
+        if self._my_target:
             self._my_target = None
     
         # Count the remaining survivors in our world.
