@@ -80,6 +80,10 @@ class ExampleAgent(Brain):
         self._unreachable_survivors: set[Location] = set()
         self._all_survivors_finished: bool = False
 
+        # track which survivor the agent is targeting 
+        self._my_target: Location | None = None
+
+
     @override
     def handle_send_message_result(self, smr: SEND_MESSAGE_RESULT) -> None:
         self._agent.log(f"SEND_MESSAGE_RESULT: {smr}")
