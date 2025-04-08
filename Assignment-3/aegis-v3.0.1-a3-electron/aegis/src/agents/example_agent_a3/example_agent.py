@@ -100,8 +100,10 @@ class ExampleAgent(Brain):
     @override
     def handle_save_surv_result(self, ssr: SAVE_SURV_RESULT) -> None:
         self._agent.log(f"SAVE_SURV_RESULT: {ssr}")
-        self._agent.log(f"{ssr}")
-        #print("#--- You need to implement handle_save_surv_result function! ---#")
+        if self.count_all_survivors_in_world() == 0:
+            self._all_survivors_finished = True
+        if self._my_target == ssr.location:
+            self._my_target = None  # clear target when saved
 
         # After saving a survivor, check if there are more survivors in the world.
         # If not, we mark _all_survivors_finished = True
