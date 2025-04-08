@@ -95,21 +95,33 @@ class ExampleAgent(Brain):
         self._agent.log(f"OBSERVE_RESULT: {ovr}")
         self._agent.log(f"{ovr}")
         #print("#--- You need to implement handle_observe_result function! ---#")
-        
 
     @override
     def handle_save_surv_result(self, ssr: SAVE_SURV_RESULT) -> None:
         self._agent.log(f"SAVE_SURV_RESULT: {ssr}")
-        if self.count_all_survivors_in_world() == 0:
-            self._all_survivors_finished = True
+        
+        # If we just saved our current target, clear it.
         if self._my_target == ssr.location:
-            self._my_target = None  # Clear target when saved
-
-        # After saving a survivor, check if there are more survivors in the world.
-        # If not, we mark _all_survivors_finished = True
-        if self.count_all_survivors_in_world() == 0:
+            self._agent.log(f"Saved target survivor at {ssr.location}, clearing target.")
+            self._my_target = None
+    
+        # Count the remaining survivors in our world.
+        remaining = self.count_all_survivors_in_world()
+        self._agent.log(f"Remaining survivors in world: {remaining}")
+    
+        # If none are left, mark as complete.
+        if remaining == 0:
             self._all_survivors_finished = True
             self._agent.log("All survivors appear to be saved. Will do finishing logic now.")
+            return
+    
+        # Replan (chain) to another survivor goal, once this one has been saved.
+        new_target = self.assign_target(self.get_world(), self._agent.get_location())
+        if new_target:
+            self._agent.log(f"Chaining to new survivor goal at {new_target}")
+            self._my_target = new_target
+        else:
+            self._agent.log("No further reachable survivors found to chain to.")
 
     @override
     def handle_predict_result(self, prd: PREDICT_RESULT) -> None:
