@@ -5,8 +5,8 @@ Submitted by:
 Group 24
 Gaurav Gulati - 30121866
 Miguel Fuentes - 30160653
-Sukhnaaz Sidhu - 
-Zahra Ali - 
+Sukhnaaz Sidhu
+Zahra Ali
 
 Course: CPSC 383 (Fall 2025)
 
@@ -15,7 +15,6 @@ References:
 - (https://www.redblobgames.com/pathfinding/a-star/introduction.html)
 - Basic partial logic from assignment 1 was integrated here for A3.
 
-Part-1 successfully implemented
 """
 
 import heapq
@@ -49,7 +48,7 @@ def chebyshev_distance(a: Location, b: Location) -> float:
     diff_y = abs(a.y - b.y)
     return max(diff_x, diff_y)
 
-# Small wrapper around Python heapq for storing (priority, item)
+# wrapper around Python heapq for storing (priority, item)
 class SimplePriorityQueue:
     def __init__(self) -> None:
         self._heap = []
@@ -88,33 +87,32 @@ class ExampleAgent(Brain):
     def handle_send_message_result(self, smr: SEND_MESSAGE_RESULT) -> None:
         self._agent.log(f"SEND_MESSAGE_RESULT: {smr}")
         self._agent.log(f"{smr}")
-        #print("#--- You need to implement handle_send_message_result function! ---#")
+
 
     @override
     def handle_observe_result(self, ovr: OBSERVE_RESULT) -> None:
         self._agent.log(f"OBSERVE_RESULT: {ovr}")
         self._agent.log(f"{ovr}")
-        #print("#--- You need to implement handle_observe_result function! ---#")
 
     @override
     def handle_save_surv_result(self, ssr: SAVE_SURV_RESULT) -> None:
         self._agent.log(f"SAVE_SURV_RESULT: {ssr}")
         
-        # If we just saved our current target, clear it.
+        # If we just saved our current target, clear it
         if self._my_target:
             self._my_target = None
     
-        # Count the remaining survivors in our world.
+        # Count the remaining survivors in our world
         remaining = self.count_all_survivors_in_world()
         self._agent.log(f"Remaining survivors in world: {remaining}")
     
-        # If none are left, mark as complete.
+        # If none are left, mark as complete
         if remaining == 0:
             self._all_survivors_finished = True
             self._agent.log("All survivors appear to be saved. Will do finishing logic now.")
             return
     
-        # Replan (chain) to another survivor goal, once this one has been saved.
+        # Replan to another survivor goal, once this one has been saved
         new_target = self.assign_target(self.get_world(), self._agent.get_location())
         if new_target:
             self._agent.log(f"Chaining to new survivor goal at {new_target}")
@@ -122,29 +120,31 @@ class ExampleAgent(Brain):
         else:
             self._agent.log("No further reachable survivors found to chain to.")
 
+
     @override
     def handle_predict_result(self, prd: PREDICT_RESULT) -> None:
         self._agent.log(f"PREDICT_RESULT: {prd}")
         self._agent.log(f"{prd}")
 
+
     @override
     def think(self) -> None:
         self._agent.log("Thinking...")
 
-        # If we've determined all survivors are finished, do finishing logic (e.g. idle).
+        # If we determined all survivors are finished do finishing logic (e.g. idle)
         if self._all_survivors_finished:
             self.send_and_end_turn(MOVE(Direction.CENTER))
             return
         
-        # Send a message to other agents in my group.
-        # Empty AgentIDList will send to group members.
+        # Send a message to other agents in my group
+        # Empty AgentIDList will send to group members
         self._agent.send(
             SEND_MESSAGE(
                 AgentIDList(), f"Hello from agent {self._agent.get_agent_id().id}"
             )
         )
         
-        # Retrieve the current state of the world.
+        # Retrieve the current state of the world
         world = self.get_world()
         if world is None:
             self.send_and_end_turn(MOVE(Direction.CENTER))
@@ -159,30 +159,42 @@ class ExampleAgent(Brain):
         # Update local knowledge about move costs around
         self.update_local_costs(world, my_loc)
 
-        # Get the top layer at the agent’s current location.
+        # Get the top layer at the agents current location
         top_layer = cell_here.get_top_layer()
 
-        # If a survivor is present, save it and end the turn.
+        # If a survivor is present, save it and end the turn
         if isinstance(top_layer, Survivor):
             self.send_and_end_turn(SAVE_SURV())
             return
 
-        # If rubble is present, clear it and end the turn.
+        # If rubble is present, clear it and end the turn
         if isinstance(top_layer, Rubble):
             self.send_and_end_turn(TEAM_DIG())
             return
 
-        # If no target or it became unreachable, reassign a target.
+        # If no target or it became unreachable, reassign a target
         if not self._my_target or self._my_target in self._unreachable_survivors:
             self._my_target = self.assign_target(world, my_loc)
             
-        # Attempt to move forward toward the assigned target.
+        # Attempt to move forward toward the assigned target
         if self._my_target:
             path = self.a_star_path(world, my_loc, self._my_target)
             if len(path) > 1:
                 energy_cost = self.calculate_energy_cost(path)
 
-                # If energy is too low, navigate to the charging cell first.
+                # If energy needed is more than current, see if we can repeatedly SLEEP here
+                # if we are on a charging cell, we can keep sleeping until we have enough 
+                # or we reach some high threshold
+                while (
+                    cell_here.is_charging_cell() 
+                    and self._agent.get_energy_level() < energy_cost 
+                    and self._agent.get_energy_level() < 95
+                ):
+                    # Sleep repeatedly
+                    self._agent.log(f"Sleeping to recharge: current energy={self._agent.get_energy_level()}, needed={energy_cost}")
+                    self.send_and_end_turn(SLEEP())
+                    return
+
                 if energy_cost > self._agent.get_energy_level():
                     charge_loc = self.find_known_charging_cell(world, my_loc)
                     if charge_loc:
@@ -190,18 +202,19 @@ class ExampleAgent(Brain):
                         if cell_here.is_charging_cell():
                             self.send_and_end_turn(SLEEP())
                         else:
+                            # Move to that charging cell
                             self.send_and_end_turn(MOVE(my_loc.direction_to(charge_path[1])))
                         return
 
-                # Move toward the survivor if energy is sufficient.
+                # Move toward the survivor if energy is sufficient
                 self.send_and_end_turn(MOVE(my_loc.direction_to(path[1])))
                 return
             else:
-                # Mark target unreachable, clear target.
+                # Mark target unreachable, clear target
                 self._unreachable_survivors.add(self._my_target)
                 self._my_target = None
 
-        # If no target, explore unvisited areas. 
+        # If no target, explore unvisited areas
         target_spot = self.pick_unvisited_cell(world, my_loc)
         if target_spot:
             path = self.a_star_path(world, my_loc, target_spot)
@@ -212,49 +225,6 @@ class ExampleAgent(Brain):
         # Fallback move
         self.send_and_end_turn(MOVE(Direction.CENTER))
 
-        # Otherwise, see if we know about a location that has a survivor
-        known_surv_loc = self.find_known_survivor(world, my_loc)
-        if known_surv_loc is not None:
-            path = self.a_star_path(world, my_loc, known_surv_loc)
-            # Need a separate path for charging cell pathfinding
-            known_charge_loc = self.find_known_charging_cell(world, my_loc)
-            if known_charge_loc is not None:
-                charging_path = self.a_star_path(world, my_loc, known_charge_loc)
-            # If the path is trivial => we can't reach that survivor.
-            if len(path) > 1:
-                # energy cost of moving to survivor
-                energy_cost = self.calculate_energy_cost(path)
-                # If agent does not have enough energy to save survivor look for charging cell
-                if energy_cost > self._agent.get_energy_level():
-                    if cell_here.is_charging_cell():  
-                        self.send_and_end_turn(SLEEP())
-                    else:
-                        direction = my_loc.direction_to(charging_path[1])
-                        self.send_and_end_turn(MOVE(direction))
-                # else trivial case
-                else:
-                    direction = my_loc.direction_to(path[1])
-                    self.send_and_end_turn(MOVE(direction))
-                return
-            else:
-                # No real path, mark that location unreachable for THIS agent
-                self._agent.log(f"Marking survivor at {known_surv_loc} unreachable for me.")
-                self._unreachable_survivors.add(known_surv_loc)
-                # We do a fallback move. Next round, we try a different survivor or explore.
-                self.send_and_end_turn(MOVE(Direction.CENTER))
-                return
-
-        # If no known survivors, we can try exploring new unvisited places
-        target_spot = self.pick_unvisited_cell(world, my_loc)
-        if target_spot is not None:
-            path = self.a_star_path(world, my_loc, target_spot)
-            if len(path) > 1:
-                direction = my_loc.direction_to(path[1])
-                self.send_and_end_turn(MOVE(direction))
-                return
-
-        # fallback if no target
-        self.send_and_end_turn(MOVE(Direction.CENTER))
 
     # Helper methods
 
@@ -318,10 +288,13 @@ class ExampleAgent(Brain):
         for row in world.get_world_grid():
             for c in row:
                 if c.is_charging_cell():
-                    closest_loc = c.location
+                    dist = chebyshev_distance(start, c.location)  # measure distance
+                    if dist < best_dist:                           # We pick the nearest charging cell
+                        best_dist = dist
+                        closest_loc = c.location
         return closest_loc
 
-    # for the center cell plus neighbors, store their move_cost in self._move_costs.
+    # for the center cell plus neighbors, store their move_cost in self._move_costs
     def update_local_costs(self, world: World, center: Location):
         directions = list(Direction)
         for d in directions:
@@ -396,16 +369,26 @@ class ExampleAgent(Brain):
                     count_surv += 1
         return count_surv
 
-    # Used to assign the nearest survivor location as the agent's target
+    # Used to assign the *split* approach among multiple survivors
     def assign_target(self, world: World, start: Location) -> Location | None:
-        # Collect all reachable survivors' locations
-        survivors = [
-            c.location
-            for row in world.get_world_grid()
-            for c in row
-            if c.has_survivors and c.location not in self._unreachable_survivors
-        ]
-        # Sorting by distance
-        survivors.sort(key=lambda loc: chebyshev_distance(start, loc))
-        # Choose the closest one
-        return survivors[0] if survivors else None
+        # 1) Gather all survivors that are not in _unreachable_survivors
+        if not world:
+            return None
+
+        all_survivors = []
+        for row in world.get_world_grid():
+            for c in row:
+                if c.has_survivors and (c.location not in self._unreachable_survivors):
+                    all_survivors.append(c.location)
+
+        if not all_survivors:
+            return None
+
+        # 2) Sort by distance
+        all_survivors.sort(key=lambda loc: chebyshev_distance(start, loc))
+
+        # 3) Let each agent pick a different one based on agent_id mod the number of survivors
+        agent_id_num = self._agent.get_agent_id().id
+        idx = agent_id_num % len(all_survivors)
+        return all_survivors[idx]
+
