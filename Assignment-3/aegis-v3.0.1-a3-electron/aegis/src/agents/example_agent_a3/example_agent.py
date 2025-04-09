@@ -3,8 +3,10 @@ example_agent.py
 
 Submitted by: 
 Group 24
-Gaurav Gulati - 30121866
-Miguel Fuentes - 30160653
+Date - 8 April 2025
+Semester - Winter 2025
+Gaurav Gulati - 30121866 - Tutorial - 04
+Miguel Fuentes - 30160653 - Tutorial -04
 Sukhnaaz Sidhu
 Zahra Ali
 
